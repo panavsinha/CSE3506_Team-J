@@ -1,0 +1,578 @@
+---
+title: <center><b>CSE3505 - Essentials of Data Analytics - G2<br>Review - 2</b></center>
+output: html_document
+---
+<pre>
+<b> Name: Soumik Kabiraj - 20BCE1504</b>
+<b>       Panav Sinha - 20BCE1640</b>
+<b>       Mayank Yadav - 20BCE1674</b>
+</pre>
+<br><br>
+
+```{r}
+library(dplyr)
+library(tidyverse)
+library(caret)
+library(grid)
+library(gridExtra)
+library(mlbench)
+library(caretEnsemble)
+library(ggrepel)
+library(reshape2)
+library(ggExtra)
+library(GGally)
+library(hrbrthemes)
+library(ROSE)
+```
+
+```{r}
+df <- read.csv("smoking.csv")
+summary(df)
+str(df)
+```
+
+```{r}
+#Tartar is the hard calcified deposits that form and coat the teeth and gums
+unique(df$tartar)
+unique(df$gender)
+unique(df$oral)
+df$sex_num <- ifelse(df$gender=="F",0,1)
+df$tartar <-  ifelse(df$tartar=="Y",1,0)
+class(df$oral)
+df$oral <- as.numeric(as.factor(df$oral))
+class(df$oral)
+```
+
+<h3> Are there outliers?
+#### Outliers for continuous variables
+```{r}
+df_num<-select_if(df,is.numeric) %>% select(-c(ID,hearing.right.,hearing.left.,smoking,dental.caries,Urine.protein))
+head(df_num)
+df_num_p<-df_num %>% gather(variable,values,1:18)
+head(df_num_p)
+
+options(repr.plot.width = 18, repr.plot.height = 14)
+ggplot(df_num_p)+geom_boxplot(aes(x=variable,y=values),fill="royalblue") + facet_wrap(~variable,ncol=3,scales="free") + theme(strip.text.x = element_blank(),text = element_text(size=8))
+```
+
+```{r}
+a <- ggplot(df, aes(age))+
+  geom_boxplot(fill="steelblue")+scale_x_continuous(breaks=seq(0,100,5))+labs(y="Age")+coord_flip()
+
+b <- ggplot(df, aes(eyesight.left.))+
+  geom_boxplot(fill="steelblue")+labs(y="Eyesight left")+coord_flip()
+
+c <- ggplot(df, aes(eyesight.right.))+
+  geom_boxplot(fill="steelblue")+labs(y="Eyesight right")+coord_flip()
+
+d <- ggplot(df, aes(HDL))+
+  geom_boxplot(fill="steelblue")+labs(y="HDL")+coord_flip()
+
+e <- ggplot(df, aes(height.cm.))+
+  geom_boxplot(fill="steelblue")+labs(y="Height")+coord_flip()
+
+f <- ggplot(df, aes(triglyceride))+
+  geom_boxplot(fill="steelblue")+labs(y="Triglyceride")+coord_flip()
+
+g <- ggplot(df, aes(ALT))+
+  geom_boxplot(fill="steelblue")+labs(y="ALT")+coord_flip()
+
+options(repr.plot.width = 18, repr.plot.height = 12)
+grid.arrange(a,b,c,d,e,f,g, ncol=4)
+```
+
+
+```{r}
+df$age_grp <- cut(df$age, c(0,17,60,100,120), labels = c("0-17","18-60","60-100","100+") )
+head(df$age_grp)
+
+h <- ggplot(df,aes(x=`age_grp`, fill=`gender`))+geom_bar()+facet_grid(.~gender)+
+  stat_count(aes(y=..count.., label=..count..), vjust=-0.5,geom="text", col="black", size=3.5)+
+  labs(x="Age Group", y = "Count", title="Age Group vs Sex", fill= "Sex")+
+  theme(plot.title=element_text(face="bold",  hjust=0.5), legend.position = "bottom",text=element_text(size=10))+
+    scale_fill_manual(values=c("plum3","royalblue"))
+
+i <- ggplot(df, aes(y = gender,fill=gender))+
+  geom_bar()+
+  scale_fill_manual(values=c("plum3","royalblue"))+
+  labs(title="Sex",x=" ")+
+  theme(legend.position = "none", plot.title=element_text(face="bold",  hjust=0.5), text=element_text(size=10))+
+  coord_polar("y")
+
+options(repr.plot.width = 16, repr.plot.height = 12)
+grid.arrange(i, h, ncol=1)
+```
+
+```{r}
+df$bmi <- (df$weight.kg./(df$height.cm.*df$height.cm.))*10000
+df$bmi_cat <- ifelse(df$bmi<18.5,"Underweight", NA )
+df$bmi_cat <- ifelse(df$bmi>=18.5 & df$bmi <=24.9,"Healthy weight", df$bmi_cat )
+df$bmi_cat <- ifelse(df$bmi > 24.9 & df$bmi<=29.9,"Overweight", df$bmi_cat)
+df$bmi_cat <- ifelse(df$bmi > 30,"Obesity", df$bmi_cat)
+table(df$bmi_cat)
+```
+
+```{r}
+ggplot(df, aes(x=bmi_cat, fill= as.factor(smoking)))+
+  geom_bar(position="dodge", col="black")+
+  scale_fill_manual(label=c("no","yes"),values=c("cadetblue", "firebrick"))+
+  theme(legend.position = "bottom")+
+  labs(x=" ", fill="Smoking", title="BMI and Smoking")+
+  theme(text=element_text(size=18), plot.title= element_text(face="bold", hjust=0.5))
+```
+
+```{r}
+msel <- df%>%
+  dplyr::filter(smoking==1)%>%
+  summarize(mean(eyesight.left.))
+sprintf("Mean left eyepower of smokers: %f",msel)
+
+mnsel <- df%>%
+  dplyr::filter(smoking==0)%>%
+  summarize(mean(eyesight.left.))
+sprintf("Mean left eyepower of non-smokers: %f",mnsel)
+
+mser <- df%>%
+  dplyr::filter(smoking==1)%>%
+  summarize(mean(eyesight.right.))
+sprintf("Mean right eyepower of smokers: %f",mser)
+
+mnser <- df%>%
+  dplyr::filter(smoking==0)%>%
+  summarize(mean(eyesight.right.))
+sprintf("Mean right eyepower of non-smokers: %f",mnser)
+```
+
+```{r}
+BP <- c("Normal","Elevated","Hypertension I","Hypertension II", "Hypertensive Crisis")
+sys <- c("less than 120", "120-129", "130-139", "140 or higher", "more than 180")
+dias <- c("less than 80", " less than 80", "80-89", "90 or higher", "120 or higher")
+pressure <- data.frame(BP, sys,dias)
+colnames(pressure) <- c("Blood Pressure", "Systolic", "Diastolic (Relaxed)")
+pressure
+```
+
+```{r}
+df$pressure <- ifelse(df$systolic<120 & df$relaxation<80,"Normal",NA)
+df$pressure <- ifelse(df$systolic>=120 & df$relaxation <80, "Elevated",df$pressure)
+df$pressure <- ifelse(df$systolic>=130 | df$relaxation>=80,"Hypertension Stage 1",df$pressure)
+df$pressure <- ifelse(df$systolic>=140 | df$relaxation>=90,"Hypertension Stage 2",df$pressure)
+df$pressure <- ifelse(df$systolic>=180 | df$relaxation>=120,"Hypertensive Crisis",df$pressure)
+table(df$pressure)
+```
+
+```{r}
+table <- df %>% 
+  group_by(df$pressure)%>%
+  summarise(smoker= length(smoking[smoking=="1"]), 
+            nonsmoker= length(smoking[smoking=="0"]),
+            smoker_percent= smoker/sum(smoker,nonsmoker)*100)%>%
+  arrange(desc(smoker_percent))
+
+table
+```
+
+```{r}
+options(repr.plot.width = 16, repr.plot.height = 12)
+ggplot(df, aes(x=reorder(pressure,pressure,function(x)-length(x)), fill=as.factor(smoking)))+
+  geom_bar(col="black",position="stack")+
+  theme(plot.title=element_text(face="bold",hjust=0.5),legend.position = "bottom", axis.text.x = element_text(angle=30), text=element_text(size=18))+
+  labs(title="Blood Pressure and Smoking",x="Blood Pressure", fill="Smoking")+
+  stat_count(aes(y=..count..,label=..count..), geom="text", vjust=1.5, size=8, col="white")+
+  scale_fill_manual(label=c("no","yes"),values=c("cadetblue", "firebrick"))
+```
+
+<h3> Does smoking increase cholesterol?
+#### Cholesterol: Do smokers have lower good fat HDL? Does smoking increase harmful fats?
+```{r}
+options(repr.plot.width = 16, repr.plot.height = 12)
+ggplot(subset(df,df$HDL<200), aes(x=HDL, fill=as.factor(smoking)))+
+  geom_bar()+
+  labs(title="HDL and Smoking", fill="Smoking")+
+  theme(legend.position = "bottom", plot.title = element_text(face="bold", hjust=0.5), text=element_text(size=18))+
+  scale_x_continuous(breaks=seq(0,200,20))+
+  scale_fill_manual(labels=c("No","Yes"),values=c("forest green","red"))
+```
+
+<h3> LDL (the bad cholesterol)
+
+```{r}
+options(repr.plot.width = 16, repr.plot.height = 12)
+ggplot(subset(df,df$LDL<200), aes(x=LDL, fill=as.factor(smoking)))+
+  geom_bar()+
+  labs(title="LDL and Smoking", fill="Smoking")+
+  theme(legend.position = "bottom", plot.title = element_text(face="bold", hjust=0.5), text=element_text(size=18))+
+  scale_x_continuous(breaks=seq(0,200,20))+
+  scale_fill_manual(labels=c("No","Yes"),values=c("forest green","red"))
+```
+
+<h3> Triglycerides
+#### The cutoff for triglyceride is 150, above 150 is at risk.
+```{r}
+df%>% select(c("triglyceride", "smoking")) %>% 
+  group_by(smoking) %>%
+  summarise(tryg_mean = mean(triglyceride)) %>%
+  mutate(., Type=ifelse(tryg_mean<150,"Healthy","Risk"))
+```
+
+<h3> Liver: Are liver functions worse for smokers? 
+#### AST normal range - 8 to 33 U/L
+#### ALT normal range - 4 to 36 U/L
+#### GTP normal range - 5 to 40 U/L
+
+```{r}
+df%>% select(c("ALT", "AST", "Gtp", "smoking")) %>% 
+  group_by(smoking) %>%
+  summarise(Alt_mean = mean(ALT),
+            Ast_mean = mean(AST),
+            Gtp_mean = mean(Gtp))
+```
+
+<h3> Blood: Do smokers have higher hemoglobin?
+```{r}
+mean(df[df$smoking=="1",'hemoglobin'])
+mean(df[df$smoking=="0",'hemoglobin'])
+
+options(repr.plot.width = 14, repr.plot.height = 10)
+ggplot(df, aes(y=hemoglobin))+
+  geom_boxplot(fill=c("cadetblue","firebrick2"))+
+  facet_grid(.~as.factor(smoking))+
+  scale_y_continuous(breaks= seq(0,20,2))+
+  labs(title="Hemoglobin and Smoking", fill="smoking")+
+  theme(plot.title = element_text(face="bold", hjust=0.5), text=element_text(size=18))
+```
+
+
+<h3> Random Forest Model 
+```{r}
+# Split data
+library(caTools)
+set.seed(123)
+df$split<- sample.split(df$smoking, SplitRatio = 0.7)
+df_train <- df %>% filter( split==TRUE) %>% select(-split)
+df_test <- df%>% filter(split==FALSE)%>%select(-split)
+ 
+paste0("Number of rows in train dataset: ",nrow(df_train))
+paste0("Number of rows in test dataset: ", nrow(df_test))
+```
+
+```{r}
+library(randomForest)
+set.seed(1234)
+
+model1 <- randomForest(factor(smoking) ~ age + height.cm. + weight.kg.+ sex_num + 
+                         eyesight.left. + eyesight.right. + hearing.left. + hearing.right. +
+                         systolic + relaxation + 
+                         Cholesterol + triglyceride + HDL + LDL +
+                         fasting.blood.sugar + hemoglobin + Urine.protein + serum.creatinine+
+                         AST + ALT + Gtp +
+                         dental.caries + tartar,
+                                importance=TRUE,
+                                ntree= 500,
+                                data = df_train)
+```
+
+```{r}
+options(repr.plot.width = 14, repr.plot.height = 10)
+plot(model1, ylim=c(0,0.36),main="Error Plot")
+legend('topright', colnames(model1$err.rate), col=1:3, fill=1:3)
+```
+
+<h2> Plot important variables.
+```{r}
+imp <- importance(model1)
+
+# Creating a dataframe of variable importance metrics
+df_imp<- data.frame(variable=row.names(imp),
+                     importance = imp[,'MeanDecreaseGini'],
+                     accuracy= imp[,'MeanDecreaseAccuracy'])
+noquote("Variable Importance Dataframe")
+df_imp
+
+# Visualizations of importance variables
+options(repr.plot.width = 14, repr.plot.height = 10)
+ggplot(df_imp, aes(x=reorder(variable,-importance),y=importance, fill=importance))+
+  geom_col()+
+  labs(x="Predictors", y ="Importance", title="Importance of predictor variables")+
+  theme(plot.title=element_text(face="bold",hjust=0.5), legend.position = "bottom", axis.text.x = element_text(angle=45), text=element_text(size=18))+
+  scale_fill_continuous(type="viridis")
+```
+
+
+<h2> Let us remove some of the low-contribution variables and improve the model.
+```{r}
+model2 <- randomForest(factor(smoking) ~ age + height.cm. + weight.kg.+ sex_num + 
+                         systolic + relaxation + 
+                         Cholesterol + triglyceride + HDL + LDL +
+                         fasting.blood.sugar + hemoglobin + serum.creatinine+
+                         AST + ALT + Gtp +
+                         dental.caries ,
+                                importance=TRUE,
+                                ntree= 500,
+                                data = df_train)
+paste("done")
+model2
+```
+
+```{r}
+model1
+
+cat(paste("Accuracy of model 1: ", (100-17.44), "%"))
+
+cat(paste("Accuracy of model 2: ", (100-17.76),"%"))
+```
+
+Prediction and Submission:<br>
+Model 1 has higher accuracy than model 2. Hence, for further use, we will go ahead with model 1 for prediction.
+
+```{r}
+pred <- predict(model1, newdata =  df_test)
+result <- data.frame(id= df_test$ID ,smoking = df_test$smoking)
+result[1:20,]
+```
+
+Conclusion: <br>
+
+Smoking is injurious to health. Here are some observations supporting this statement:
+
+Higher eye power has been observed among smokers <br>
+Hyper-intensive and high blood pressure tend to be correlated with smokers. This can cause heart diseases. <br>
+The good cholesterol is seen less in smokers. <br>
+Triglyceride is seen at a risk level among smokers. <br>
+Gtp, a metric of liver function is seen to be at a risk level among smokers. <br>
+
+
+```{r}
+predict1 = predict(model1, df_test)
+predict2 = predict(model2, df_test)
+```
+
+```{r}
+acc1 <- mean(predict1 != df_test$smoking)
+acc2 <- mean(predict2 != df_test$smoking)
+cat(paste("Accuracy of model 1:", (1-acc1)*100, "%\n"))
+cat(paste("Accuracy of model 2:", (1-acc2)*100, "%"))
+```
+
+```{r}
+set.seed(100)
+control1 <- trainControl(sampling="rose",method="repeatedcv", number=5, repeats=5)
+bagCART_model <- train(factor(smoking) ~ age + height.cm. + weight.kg.+ sex_num + 
+                         systolic + relaxation + 
+                         Cholesterol + triglyceride + HDL + LDL +
+                         fasting.blood.sugar + hemoglobin + serum.creatinine+
+                         AST + ALT + Gtp +
+                         dental.caries, data=df_train, method="treebag", metric="Accuracy", trControl=control1)
+#Predictions on the test set
+predictTest = predict(bagCART_model, df_test)
+```
+
+```{r}
+acc3 <- mean(predictTest != df_test$smoking)
+cat(paste("Accuracy of model 3:", (1-acc3)*100, "%"))
+```
+
+
+<h3>Importing the dataset</h3>
+```{r}
+data <- read.csv("Medicalpremium.csv")
+head(data)
+str(data)
+dim(data)
+ggcorr(data, label = T, color = "black", size = 3)+
+  labs(title = "Correlation Matrix")
+```
+<h3>Factorizing various columns</h3>
+```{r}
+data$Diabetes <- as.factor(data$Diabetes)
+data$BloodPressureProblems <- as.factor(data$BloodPressureProblems)
+data$AnyTransplants <- as.factor(data$AnyTransplants)
+data$AnyChronicDiseases <- as.factor(data$AnyChronicDiseases)
+data$KnownAllergies <- as.factor(data$KnownAllergies)
+data$HistoryOfCancerInFamily <- as.factor(data$HistoryOfCancerInFamily)
+data$NumberOfMajorSurgeries <- as.factor(data$NumberOfMajorSurgeries)
+str(data)
+```
+<h3>Calculating BMI</h3>
+```{r}
+data$bmi <- 10000*(data$Weight/(data$Height)^2)
+```
+<h3>Assigning categories to different BMI ranges</h3>
+```{r}
+data <- data %>%
+  mutate( bmiCategory = case_when(
+                                  bmi<18.49999 ~ "under weight",
+                                  bmi>18.5 & bmi<24.99999 ~ "normal weight",
+                                  bmi>25 & bmi<29.99999 ~ "over weight",
+                                  bmi>30 ~ "obesity"
+                                  ))
+```
+<h3>Diabetics People Premium Analysis</h3>
+```{r}
+data %>% 
+  select(Diabetes,PremiumPrice) %>%
+  group_by(Diabetes) %>% 
+  summarise( PremiumPrice = mean(PremiumPrice)) %>% 
+  ggplot(.,aes(Diabetes,PremiumPrice))+
+  geom_bar(stat = "identity",width = 0.4, fill = "#56B4E9", alpha = 0.6)+
+  labs(title = "Bar plot for Diabetics People")
+```
+<h3>Distribution of Premium Prices for Diabetic and Non-Diabetic People</h3>
+```{r}
+ggplot(data, aes(PremiumPrice))+
+  geom_density(aes(fill = Diabetes), color = NA, alpha = 0.6)+
+  labs(title = "Density plot for Diabetics and Non-diabetic people")
+```
+<h3>Blood Pressure Patients Premium Analysis</h3>
+```{r}
+data %>% 
+  select(BloodPressureProblems,PremiumPrice) %>%
+  group_by(BloodPressureProblems) %>% 
+  summarise( PremiumPrice = mean(PremiumPrice)) %>% 
+  ggplot(.,aes(BloodPressureProblems,PremiumPrice))+
+  geom_bar(stat = "identity",width = 0.4, fill = "#56B4E9", alpha = 0.6)+
+  labs(title = "Bar plot for people with problem of blood pressure")
+```
+<h3>Distribution of Premium Prices for people with and without blood pressure problems</h3>
+```{r}
+ggplot(data, aes(PremiumPrice))+
+  geom_density(aes(fill = BloodPressureProblems), color = NA, alpha = 0.6)+
+  labs(title = "Density plot for people with and without blood pressure problems")
+```
+<h3>People Gone Through Any Transplants Premium Analysis</h3>
+```{r}
+data %>% 
+  select(AnyTransplants,PremiumPrice) %>%
+  group_by(AnyTransplants) %>% 
+  summarise( PremiumPrice = mean(PremiumPrice)) %>% 
+  ggplot(.,aes(AnyTransplants,PremiumPrice))+
+  geom_bar(stat = "identity",width = 0.4, fill = "#56B4E9", alpha = 0.6)+
+  labs(title = "Bar plot for people gone through any transplants")
+```
+<h3>Distribution of Premium Prices for People Gone Through Any Transplants vs Those Who haven't Gone Through Any Transplants</h3>
+```{r}
+ggplot(data, aes(PremiumPrice))+
+  geom_density(aes(fill = AnyTransplants), color = NA, alpha = 0.6)+
+  labs(title = "Density plot for people gone through any transpalnts")
+```
+<h3>People With Chronic Disease Premium Analysis</h3>
+```{r}
+data %>% 
+  select(AnyChronicDiseases,PremiumPrice) %>%
+  group_by(AnyChronicDiseases) %>% 
+  summarise( PremiumPrice = mean(PremiumPrice)) %>% 
+  ggplot(.,aes(AnyChronicDiseases,PremiumPrice))+
+  geom_bar(stat = "identity",width = 0.4, fill = "#56B4E9", alpha = 0.6)+
+  labs(title = "Bar plot for people with cronic disease")
+```
+<h3>Distribution of Premium Prices for People With Chronic Disease and People With No Chronic Disease</h3>
+```{r}
+ggplot(data, aes(PremiumPrice))+
+  geom_density(aes(fill = AnyChronicDiseases), color = NA, alpha = 0.6)+
+  labs(title = "Density plot for  having chronic diseases")
+```
+<h2>Allergy Patients Premium Analysis</h2>
+<h3>Average Difference in Premium Prices for Allergy patients and No Allergy Patients</h3>
+```{r}
+data %>% 
+  select(KnownAllergies,PremiumPrice) %>%
+  group_by(KnownAllergies) %>% 
+  summarise( PremiumPrice = mean(PremiumPrice)) %>% 
+  ggplot(.,aes(KnownAllergies,PremiumPrice))+
+  geom_bar(stat = "identity",width = 0.4, fill = "#56B4E9", alpha = 0.6)+
+  labs(title = "Bar plot for people having allergies")
+```
+<h3>Distribution of Premium Prices for Allergy Patients and No Allergy Patients</h3>
+```{r}
+ggplot(data, aes(PremiumPrice))+
+  geom_density(aes(fill = KnownAllergies), color = NA, alpha = 0.6)+
+  labs(title = "Density plot for people with and without allergies")
+```
+<h2>Patients with History of Cancer in Family Premium Analysis</h2>
+<h3>Average Difference in Premium Prices for Patients with History of Cancer and Patients without History of Cancer</h3>
+```{r}
+data %>% 
+  select(HistoryOfCancerInFamily,PremiumPrice) %>%
+  group_by(HistoryOfCancerInFamily) %>% 
+  summarise( PremiumPrice = mean(PremiumPrice)) %>% 
+  ggplot(.,aes(HistoryOfCancerInFamily,PremiumPrice))+
+  geom_bar(stat = "identity",width = 0.4, fill = "#56B4E9", alpha = 0.6)+
+  labs(title = "Bar plot for people with history of cancer")
+```
+<h3>Distribution of Premium Prices for Patients with History of Cancer and Patients without History of Cancer</h3>
+```{r}
+ggplot(data, aes(PremiumPrice))+
+  geom_density(aes(fill = HistoryOfCancerInFamily), color = NA, alpha = 0.6)+
+  labs(title = "Density plot for people with and without history of cancer")
+```
+<h2>People Gone Through Major Surgeries Premium Analysis</h2>
+<h3>Average Difference in Premium Prices for People gone through major surgeries</h3>
+```{r}
+data %>% 
+  select(NumberOfMajorSurgeries,PremiumPrice) %>%
+  group_by(NumberOfMajorSurgeries) %>% 
+  summarise( PremiumPrice = mean(PremiumPrice)) %>% 
+  ggplot(.,aes(NumberOfMajorSurgeries,PremiumPrice))+
+  geom_bar(stat = "identity",width = 0.4, fill = "#56B4E9", alpha = 0.6)+
+  labs(title = "Bar plot for major surgeries")
+```
+<h3>Distribution of Premium Prices for People gone through major surgeries</h3>
+```{r}
+ggplot(data %>% 
+         select(NumberOfMajorSurgeries,PremiumPrice) %>%
+         filter(!NumberOfMajorSurgeries == 3),
+         aes(PremiumPrice))+
+  geom_density(aes(fill = NumberOfMajorSurgeries), color = NA, alpha = 0.6)+
+  labs(title = "Density plot for people with differnt number of surgeries")
+```
+<h3>Box Plot for Different BMI category</h3>
+```{r}
+data %>% 
+  mutate(bmiCategory = str_to_title(bmiCategory)) %>% 
+  
+  ggplot(aes(bmiCategory, PremiumPrice))+
+  geom_boxplot()+
+  geom_jitter(aes(color = bmiCategory),alpha = 0.4)+
+  labs(title = "Distribution of Premium Price Over Differnt BMI category")
+```
+<h2>Prediction Model</h2>
+```{r}
+library(randomForest)
+library(caTools)
+```
+```{r}
+data$PremiumPrice <- as.factor(data$PremiumPrice)
+summary(data)
+```
+<h3>Spliting Data into two Subset for Training and Testing use.</h3>
+```{r}
+sample <- sample.split(data$PremiumPrice, SplitRatio = 0.75)
+train <- subset(data, sample == TRUE)
+test <- subset(data, sample == FALSE)
+dim(train)
+dim(test)
+```
+<h3>Random Forest</h3>
+```{r}
+set.seed(123)
+rf <- randomForest(
+  PremiumPrice ~ .,
+  data=train
+)
+print(rf)
+```
+```{r}
+pred <- predict(rf, newdata = test[-11])
+cm <- table(pred,obs = test[,11])
+sum <- 0
+for (i in 1:24){
+    for(j in 1:24){
+        if(i!=j){
+            sum <-sum+cm[i,j]
+        }
+    }
+}
+sum
+print(paste("The Accuracy of Random Forest Model is",(243-sum)/2.43))
+```
+<br>The accuracy for predictions while using 75% data for training and 25% for testing has turned out to be around 92% using Random Forest model.<br>
